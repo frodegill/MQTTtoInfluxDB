@@ -1,0 +1,4 @@
+MQTTtoInfluxDB
+*.dep
+*.o
+*.kdev*
