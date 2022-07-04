@@ -12,6 +12,9 @@ class Server
 public:
   Server(const Properties& properties);
 
+private:
+  static void session(asio::ip::tcp::socket socket);
+
 public:
   void run();
 
