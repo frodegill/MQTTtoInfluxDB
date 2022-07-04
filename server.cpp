@@ -35,11 +35,12 @@ void Server::session(asio::ip::tcp::socket socket)
         {
           packet = BasePacket::createPacket(data, length);
         }
-        else
+        size_t read_bytes = packet->parse(data, length);
+        if (read_bytes != length)
         {
-          packet->parse(data, length);
         }
-      } while (length>0 && !packet->hasError() && !packet->isCompletelyParsed());
+      }
+      while (length>0 && !packet->hasError() && !packet->isCompletelyParsed());
     }
   }
   catch (std::exception& e)
