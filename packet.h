@@ -16,6 +16,9 @@ public:
   [[nodiscard]] static std::shared_ptr<BasePacket> createPacket(const uint8_t* buffer, size_t length);
   [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) {setHasError(); return length;} //Consider it an error if parsing gets here and not to any of the subclasses
 
+protected:
+  [[nodiscard]] bool parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& pos, uint32_t& value);
+
 public:
   void setHasError() {m_has_error = true;}
   void setIsCompletelyParsed() {m_is_completely_parsed = true;}
