@@ -13,21 +13,18 @@ protected:
   virtual ~BasePacket() = default;
 
 public:
-  [[nodiscard]] static std::shared_ptr<BasePacket> createPacket(const uint8_t* buffer, size_t length);
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) {setHasError(); return length;} //Consider it an error if parsing gets here and not to any of the subclasses
+  [[nodiscard]] static std::shared_ptr<BasePacket> createPacket(const uint8_t* buffer, size_t length, size_t& fixed_header_length, size_t& total_length);
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) {return setHasError();} //Consider it an error if parsing gets here and not to any of the subclasses
 
 protected:
-  [[nodiscard]] bool parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& pos, uint32_t& value);
+  [[nodiscard]] bool parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value);
 
 public:
-  void setHasError() {m_has_error = true;}
-  void setIsCompletelyParsed() {m_is_completely_parsed = true;}
+  bool setHasError() {m_has_error = true; return false;}
   [[nodiscard]] bool hasError() const {return m_has_error;}
-  [[nodiscard]] bool isCompletelyParsed() const {return m_is_completely_parsed;}
 
 private:
   bool m_has_error;
-  bool m_is_completely_parsed;
 };
 
 
@@ -37,17 +34,20 @@ public:
   ReservedPacket() : BasePacket() {setHasError();}
   virtual ~ReservedPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
 class ConnectPacket : public BasePacket
 {
 public:
-  ConnectPacket() : BasePacket() {}
+  ConnectPacket() : BasePacket(), m_client_version(0) {}
   virtual ~ConnectPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override;
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, size_t length) override;
+
+private:
+  uint8_t m_client_version;
 };
 
 
@@ -57,7 +57,7 @@ public:
   ConnAckPacket() : BasePacket() {}
   virtual ~ConnAckPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -67,7 +67,7 @@ public:
   PublishPacket() : BasePacket() {}
   virtual ~PublishPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -77,7 +77,7 @@ public:
   PubAckPacket() : BasePacket() {}
   virtual ~PubAckPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -87,7 +87,7 @@ public:
   PubRecPacket() : BasePacket() {}
   virtual ~PubRecPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -97,7 +97,7 @@ public:
   PubRelPacket() : BasePacket() {}
   virtual ~PubRelPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -107,7 +107,7 @@ public:
   PubCompPacket() : BasePacket() {}
   virtual ~PubCompPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -117,7 +117,7 @@ public:
   SubscribePacket() : BasePacket() {}
   virtual ~SubscribePacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -127,7 +127,7 @@ public:
   SubAckPacket() : BasePacket() {}
   virtual ~SubAckPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -137,7 +137,7 @@ public:
   UnsubscribePacket() : BasePacket() {}
   virtual ~UnsubscribePacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -147,7 +147,7 @@ public:
   UnsubAckPacket() : BasePacket() {}
   virtual ~UnsubAckPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -157,7 +157,7 @@ public:
   PingReqPacket() : BasePacket() {}
   virtual ~PingReqPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -167,7 +167,7 @@ public:
   PingRespPacket() : BasePacket() {}
   virtual ~PingRespPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -177,7 +177,7 @@ public:
   DisconnectPacket() : BasePacket() {}
   virtual ~DisconnectPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 
@@ -187,7 +187,7 @@ public:
   AuthPacket() : BasePacket() {}
   virtual ~AuthPacket() = default;
 
-  [[nodiscard]] virtual size_t parse([[maybe_unused]] const uint8_t* buffer, size_t length) override {return length;}
+  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
 };
 
 #endif // _PACKET_H_

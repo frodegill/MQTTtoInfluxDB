@@ -15,37 +15,54 @@ Server::Server(const Properties& properties)
 
 void Server::session(asio::ip::tcp::socket socket)
 {
-  const size_t MAX_LENGTH = 1024;
-  uint8_t data[MAX_LENGTH];
+  const size_t MAX_LENGTH = 20;
+  std::shared_ptr<uint8_t[]> databuffer(new uint8_t[MAX_LENGTH]);
   size_t length;
+  size_t fixed_header_length;
+  size_t total_length;
   std::error_code error;
-  try
+  while (true)
   {
-    while (true)
+    try
     {
-      std::shared_ptr<BasePacket> packet;
+      length = socket.read_some(asio::buffer(databuffer.get(), MAX_LENGTH), error);
+      if (error)
+        break;
 
-      do
+      std::shared_ptr<BasePacket> packet = BasePacket::createPacket(databuffer.get(), length, fixed_header_length, total_length);
+      if (packet->hasError())
+        break;
+
+      if (length >= total_length)
       {
-        length = socket.read_some(asio::buffer(data), error);
-        if (error)
-          break;
-
-        if (!packet.get())
+        if (!packet->parse(databuffer.get(), length))
         {
-          packet = BasePacket::createPacket(data, length);
-        }
-        size_t read_bytes = packet->parse(data, length);
-        if (read_bytes != length)
-        {
+          break; //Error
         }
       }
-      while (length>0 && !packet->hasError() && !packet->isCompletelyParsed());
+      else
+      {
+        std::shared_ptr<uint8_t[]> large_databuffer(new uint8_t[total_length]);
+        if (!large_databuffer.get())
+          break; //OOM
+
+        std::memcpy(large_databuffer.get(), databuffer.get(), length);
+        length += asio::read(socket, asio::buffer(large_databuffer.get()+length, total_length-length), error);
+        if (error || (length < total_length))
+          break;
+
+        if (!packet->parse(large_databuffer.get(), length))
+        {
+          break; //Error
+        }
+      }
+
+      //TODO Handle packet
     }
-  }
-  catch (std::exception& e)
-  {
-    std::cerr << "Exception in thread: " << e.what() << "\n";
+    catch (std::exception& e)
+    {
+      std::cerr << "Exception in thread: " << e.what() << "\n";
+    }
   }
 }
 
