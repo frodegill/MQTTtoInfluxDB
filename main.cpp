@@ -1,11 +1,18 @@
+#include <iostream>
+
 #include "properties.h"
 #include "server.h"
+#include "session.h"
 
-#include <iostream>
+
+std::shared_ptr<SessionManager> g_session_manager;
+std::shared_ptr<SessionManager> getSessionManager() {return g_session_manager;}
 
 
 int main(int /*argc*/, char */*argv*/[])
 {
+  g_session_manager = std::make_shared<SessionManager>();
+
   Properties properties;
   if (!properties.loadFile())
   {

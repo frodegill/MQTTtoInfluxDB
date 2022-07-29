@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "packet.h"
+#include "packets/packet.h"
 
 
 Server::Server(const Properties& properties)
