@@ -1,5 +1,7 @@
 #include "packet.h"
 
+#include <cstring>
+
 #include "packet_connect.h"
 
 #include "../main.h"
@@ -62,10 +64,83 @@ std::shared_ptr<BasePacket> BasePacket::createPacket(const uint8_t* buffer, size
 
   return packet;
 }
+
 /*
- * If returning true, parse_pos will be incremented by the number of bytes consumed
+ * If returning true, parsed_length will be incremented by the number of bytes consumed
  */
-bool BasePacket::parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& parse_pos, uint32_t& value)
+bool BasePacket::parseString(const uint8_t* buffer, size_t length, size_t& parsed_length, std::string& value)
+{
+  size_t locally_parsed_length = parsed_length;
+  uint16_t string_length;
+  if (!parseUint16(buffer, length, locally_parsed_length, string_length))
+  {
+    value = "";
+    return false;
+  }
+
+  if (locally_parsed_length+string_length > length)
+  {
+    value = "";
+    return false;
+  }
+
+  value.assign(reinterpret_cast<const char*>(buffer+locally_parsed_length), string_length);
+  parsed_length = locally_parsed_length + string_length;
+  return true;
+}
+
+/*
+ * If returning true, parsed_length will be incremented by the number of bytes consumed
+ */
+bool BasePacket::parseUint8(const uint8_t* buffer, size_t length, size_t& parsed_length, uint8_t& value)
+{
+  if (parsed_length+1 >= length)
+  {
+    value = 0;
+    return false;
+  }
+
+  value = buffer[parsed_length];
+  parsed_length++;
+  return true;
+}
+
+/*
+ * If returning true, parsed_length will be incremented by the number of bytes consumed
+ */
+bool BasePacket::parseUint16(const uint8_t* buffer, size_t length, size_t& parsed_length, uint16_t& value)
+{
+  if (parsed_length+2 >= length)
+  {
+    value = 0;
+    return false;
+  }
+
+  value = buffer[parsed_length]<<8 | buffer[parsed_length+1];
+  parsed_length += 2;
+  return true;
+}
+
+/*
+ * If returning true, parsed_length will be incremented by the number of bytes consumed
+ */
+bool BasePacket::parseUint32(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value)
+{
+  if (parsed_length+4 >= length)
+  {
+    value = 0;
+    return false;
+  }
+
+  value = buffer[parsed_length]<<24 | buffer[parsed_length+1]<<16 | buffer[parsed_length+2]<<8 | buffer[parsed_length+3];
+  parsed_length += 4;
+  return true;
+}
+
+/*
+ * If returning true, parsed_length will be incremented by the number of bytes consumed
+ */
+bool BasePacket::parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value)
 {
   value = 0;
   uint32_t multiplier = 1;
@@ -74,13 +149,13 @@ bool BasePacket::parseVariableByteInteger(const uint8_t* buffer, size_t length, 
   size_t offset = 0;
   do
   {
-    if ((parse_pos+offset) >= length)
+    if ((parsed_length+offset) >= length)
     {
       value = 0;
       return false;
     }
 
-    encoded_byte = buffer[parse_pos + offset++];
+    encoded_byte = buffer[parsed_length + offset++];
     value += (encoded_byte & 0x7F) * multiplier;
 
     if (multiplier > 128*128*128)
@@ -94,6 +169,25 @@ bool BasePacket::parseVariableByteInteger(const uint8_t* buffer, size_t length, 
   }
   while ((encoded_byte & 0x80) != 0);
 
-  parse_pos += offset;
+  parsed_length += offset;
+  return true;
+}
+
+/*
+ * If returning true, parsed_length will be incremented by the number of bytes consumed
+ */
+bool BasePacket::parseBinaryData(const uint8_t* buffer, size_t length, size_t& parsed_length, std::shared_ptr<uint8_t[]>& value)
+{
+  size_t locally_parsed_length = parsed_length;
+  uint16_t data_length;
+  if (!parseUint16(buffer, length, locally_parsed_length, data_length))
+    return false;
+
+  if (locally_parsed_length+data_length > length)
+    return false;
+
+  value = std::shared_ptr<uint8_t[]>(new uint8_t[data_length]);
+  std::memcpy(value.get(), buffer+locally_parsed_length, data_length);
+  parsed_length = locally_parsed_length + data_length;
   return true;
 }

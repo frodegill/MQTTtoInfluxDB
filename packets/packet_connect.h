@@ -3,6 +3,8 @@
 
 #include "packet.h"
 
+#include <map>
+
 
 class ConnectPacket : public BasePacket
 {
@@ -14,7 +16,14 @@ public:
                                   m_will_retain_flag(0),
                                   m_password_flag(0),
                                   m_username_flag(0),
-                                  m_keep_alive(0) {}
+                                  m_keep_alive(0),
+                                  m_session_expiry_interval(0),
+                                  m_receive_maximum(65535),
+                                  m_maximum_packet_size(64*1024), //"It is the responsibility of the application to select a suitable Maximum Packet Size value if it chooses to restrict the Maximum Packet Size"
+                                  m_topic_alias_maximum(0),
+                                  m_request_response_information(0),
+                                  m_request_problem_information(1)
+                                  {}
 
   virtual ~ConnectPacket() = default;
 
@@ -31,6 +40,17 @@ private:
   bool m_username_flag;
 
   uint16_t m_keep_alive;
+
+  uint32_t m_session_expiry_interval;
+  uint16_t m_receive_maximum;
+  uint32_t m_maximum_packet_size;
+  uint16_t m_topic_alias_maximum;
+  uint8_t m_request_response_information;
+  uint8_t m_request_problem_information;
+  std::multimap<std::string,std::string> m_user_properties;
+  std::string m_authentication_method;
+  std::shared_ptr<uint8_t[]> m_authentication_data;
+
 };
 
 #endif // _PACKET_CONNECT_H_

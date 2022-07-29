@@ -70,10 +70,59 @@ bool ConnectPacket::parse([[maybe_unused]] const uint8_t* buffer, size_t length)
   m_keep_alive = buffer[parse_pos]<<8 | buffer[parse_pos+1];
   parse_pos += 2;
 
-  // 3.1.2.11, Property Length
-  uint32_t property_length;
-  if (!parseVariableByteInteger(buffer, length, parse_pos, property_length))
-    return setHasError();
+  if (m_client_version >= 5)
+  {
+    // 3.1.2.11, Property Length
+    uint32_t property_length;
+    if (!parseVariableByteInteger(buffer, length, parse_pos, property_length))
+      return setHasError();
+
+    uint32_t property_end = parse_pos + property_length;
+    if (property_end >= length)
+      return setHasError();
+
+    m_user_properties.clear();
+    while (parse_pos < property_end)
+    {
+      switch(buffer[parse_pos++])
+      {
+        case PropertyIdentifier::SESSION_EXPIRY_INTERVAL:
+          if (!parseUint32(buffer, length, parse_pos, m_session_expiry_interval)) {return setHasError();}
+          break;
+        case PropertyIdentifier::RECEIVE_MAXIMUM:
+          if (!parseUint16(buffer, length, parse_pos, m_receive_maximum)) {return setHasError();}
+          break;
+        case PropertyIdentifier::MAXIMUM_PACKET_SIZE:
+          if (!parseUint32(buffer, length, parse_pos, m_maximum_packet_size) || m_maximum_packet_size==0) {return setHasError();}
+          break;
+        case PropertyIdentifier::TOPIC_ALIAS_MAXIMUM:
+          if (!parseUint16(buffer, length, parse_pos, m_topic_alias_maximum)) {return setHasError();}
+          break;
+        case PropertyIdentifier::REQUEST_RESPONSE_INFORMATION:
+          if (!parseUint8(buffer, length, parse_pos, m_request_response_information) || m_request_response_information>1) {return setHasError();}
+          break;
+        case PropertyIdentifier::REQUEST_PROBLEM_INFORMATION:
+          if (!parseUint8(buffer, length, parse_pos, m_request_problem_information) || m_request_problem_information>1) {return setHasError();}
+          break;
+        case PropertyIdentifier::USER_PROPERTY:
+        {
+          std::string key, value;
+          if (!parseString(buffer, length, parse_pos, key) ||
+              !parseString(buffer, length, parse_pos, value)) {return setHasError();}
+          m_user_properties.emplace(key, value);
+          break;
+        }
+        case PropertyIdentifier::AUTHENTICATION_METHOD:
+          if (!parseString(buffer, length, parse_pos, m_authentication_method)) {return setHasError();}
+          break;
+        case PropertyIdentifier::AUTHENTICATION_DATA:
+          if (!parseBinaryData(buffer, length, parse_pos, m_authentication_data)) {return setHasError();}
+          break;
+
+        default: return setHasError();
+      }
+    }
+  }
 
   //TODO
 
