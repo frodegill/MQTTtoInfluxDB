@@ -1,5 +1,9 @@
 #include "packet_connect.h"
 
+#include "../main.h"
+#include "../session.h"
+
+
 /*
  * Any documentation references below, references the document https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html
  */
@@ -14,7 +18,7 @@ bool ConnectPacket::parse([[maybe_unused]] const uint8_t* buffer, size_t length)
   if (buffer[parse_pos] != 0x10)
     return setHasError();
 
-  if (++parse_pos >= length) //Skip first byte of Fixexd Header
+  if (++parse_pos >= length) //Skip first byte of Fixed Header
     return setHasError();
 
   uint32_t remaining_length;
@@ -22,53 +26,37 @@ bool ConnectPacket::parse([[maybe_unused]] const uint8_t* buffer, size_t length)
     return setHasError();
 
   // 3.1.2.1, Protocol Name
-  if (parse_pos+6 >= length)
+  std::string protocol_name;
+  if (!parseString(buffer, length, parse_pos, protocol_name) || protocol_name.compare("MQTT")!=0)
     return setHasError();
-
-  if (buffer[parse_pos] != 0 ||
-      buffer[parse_pos+1] != 4 ||
-      buffer[parse_pos+2] != 'M' ||
-      buffer[parse_pos+3] != 'Q' ||
-      buffer[parse_pos+4] != 'T' ||
-      buffer[parse_pos+5] != 'T')
-  {
-    return setHasError();
-  }
-  parse_pos += 6;
 
   // 3.1.2.2, Protocol Version
-  if (parse_pos+1 >= length)
+  if (!parseUint8(buffer, length, parse_pos, m_client_version))
     return setHasError();
 
-  m_client_version = buffer[parse_pos++];
   if (m_client_version<4 || m_client_version>5)
   {
     //TODO "If the Protocol Version is not 5 and the Server does not want to accept the CONNECT packet, the Server MAY send a CONNACK packet with Reason Code 0x84 (Unsupported Protocol Version) and then MUST close the Network Connection"
   }
 
   // 3.1.2.3, Connect Flags
-  if (parse_pos+1 >= length)
+  uint8_t connect_flag;
+  if (!parseUint8(buffer, length, parse_pos, connect_flag))
     return setHasError();
 
-  uint8_t connect_flag = buffer[parse_pos++];
-  if ((connect_flag & 0x01) != 0)
-  {
+  if ((connect_flag & 0x01) != 0) //RESERVED flag
     return setHasError();
-  }
 
-  m_clean_start_flag = (connect_flag & 0x02) >> 1;
-  m_will_flag = (connect_flag & 0x04) >> 2;
-  m_will_qos_flag = (connect_flag & 0x18) >> 3;
-  m_will_retain_flag = (connect_flag & 0x20) >> 5;
-  m_password_flag = (connect_flag & 0x40) >> 6;
-  m_username_flag = (connect_flag & 0x80) >> 7;
+  m_clean_start_flag = (connect_flag & 0b00000010) >> 1;
+  m_will_flag        = (connect_flag & 0b00000100) >> 2;
+  m_will_qos_flag    = (connect_flag & 0b00011000) >> 3;
+  m_will_retain_flag = (connect_flag & 0b00100000) >> 5;
+  m_password_flag    = (connect_flag & 0b01000000) >> 6;
+  m_username_flag    = (connect_flag & 0b10000000) >> 7;
 
   // 3.1.2.10, Keep Alive
-  if (parse_pos+2 >= length)
+  if (!parseUint16(buffer, length, parse_pos, m_keep_alive))
     return setHasError();
-
-  m_keep_alive = buffer[parse_pos]<<8 | buffer[parse_pos+1];
-  parse_pos += 2;
 
   if (m_client_version >= 5)
   {
@@ -124,7 +112,81 @@ bool ConnectPacket::parse([[maybe_unused]] const uint8_t* buffer, size_t length)
     }
   }
 
+  if (!parseString(buffer, length, parse_pos, m_client_id))
+    return setHasError();
+
+  if (m_will_flag==1)
+  {
+    // 3.1.3.2.1 Property Length
+    uint32_t will_property_length;
+    if (!parseVariableByteInteger(buffer, length, parse_pos, will_property_length))
+      return setHasError();
+
+    uint32_t will_property_end = parse_pos + will_property_length;
+    if (will_property_end >= length)
+      return setHasError();
+
+    m_will_user_properties.clear();
+    while (parse_pos < will_property_end)
+    {
+      switch(buffer[parse_pos++])
+      {
+        case PropertyIdentifier::WILL_DELAY_INTERVAL:
+          if (!parseUint32(buffer, length, parse_pos, m_will_delay_interval)) {return setHasError();}
+          break;
+        case PropertyIdentifier::PAYLOAD_FORMAT_INDICATOR:
+          if (!parseUint8(buffer, length, parse_pos, m_payload_format_indicator) || m_payload_format_indicator>1) {return setHasError();}
+          break;
+        case PropertyIdentifier::MESSAGE_EXPIRY_INTERVAL:
+          if (!parseUint32(buffer, length, parse_pos, m_message_expiry_interval)) {return setHasError();}
+          break;
+        case PropertyIdentifier::CONTENT_TYPE:
+          if (!parseString(buffer, length, parse_pos, m_content_type)) {return setHasError();}
+          break;
+        case PropertyIdentifier::RESPONSE_TOPIC:
+          if (!parseString(buffer, length, parse_pos, m_response_topic)) {return setHasError();}
+          break;
+        case PropertyIdentifier::CORRELATION_DATA:
+          if (!parseBinaryData(buffer, length, parse_pos, m_correlation_data)) {return setHasError();}
+          break;
+        case PropertyIdentifier::USER_PROPERTY:
+        {
+          std::string key, value;
+          if (!parseString(buffer, length, parse_pos, key) ||
+              !parseString(buffer, length, parse_pos, value)) {return setHasError();}
+          m_will_user_properties.emplace_back(std::pair<std::string,std::string>(key, value));
+          break;
+        }
+
+        default: return setHasError();
+      }
+    }
+
+    if (!parseString(buffer, length, parse_pos, m_will_topic))
+      return setHasError();
+
+    if (!parseBinaryData(buffer, length, parse_pos, m_will_payload))
+      return setHasError();
+  }
+
+  if (m_username_flag==1)
+  {
+    if (!parseString(buffer, length, parse_pos, m_username))
+      return setHasError();
+  }
+
+  if (m_password_flag==1)
+  {
+    if (!parseBinaryData(buffer, length, parse_pos, m_password))
+      return setHasError();
+  }
+
+  return actions();
+}
+
+bool ConnectPacket::actions() // 3.1.4 CONNECT Actions
+{
   //TODO
 
-  return length;
+  return true;
 }

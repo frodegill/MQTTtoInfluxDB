@@ -4,6 +4,7 @@
 #include "packet.h"
 
 #include <map>
+#include <vector>
 
 
 class ConnectPacket : public BasePacket
@@ -22,12 +23,18 @@ public:
                                   m_maximum_packet_size(64*1024), //"It is the responsibility of the application to select a suitable Maximum Packet Size value if it chooses to restrict the Maximum Packet Size"
                                   m_topic_alias_maximum(0),
                                   m_request_response_information(0),
-                                  m_request_problem_information(1)
+                                  m_request_problem_information(1),
+                                  m_will_delay_interval(0),
+                                  m_payload_format_indicator(0),
+                                  m_message_expiry_interval(0)
                                   {}
 
   virtual ~ConnectPacket() = default;
 
   [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, size_t length) override;
+
+private:
+  [[nodiscard]] bool actions();
 
 private:
   uint8_t m_client_version;
@@ -51,6 +58,21 @@ private:
   std::string m_authentication_method;
   std::shared_ptr<uint8_t[]> m_authentication_data;
 
+  std::string m_client_id;
+
+  uint32_t m_will_delay_interval;
+  uint8_t m_payload_format_indicator;
+  uint32_t m_message_expiry_interval;
+  std::string m_content_type;
+  std::string m_response_topic;
+  std::shared_ptr<uint8_t[]> m_correlation_data;
+  std::vector<std::pair<std::string,std::string>> m_will_user_properties; // 3.1.3.2.8. "The Server MUST maintain the order of User Properties when publishing the Will Message"
+
+  std::string m_will_topic;
+  std::shared_ptr<uint8_t[]> m_will_payload;
+
+  std::string m_username;
+  std::shared_ptr<uint8_t[]> m_password;
 };
 
 #endif // _PACKET_CONNECT_H_

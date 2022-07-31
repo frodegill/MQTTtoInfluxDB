@@ -84,7 +84,15 @@ bool BasePacket::parseString(const uint8_t* buffer, size_t length, size_t& parse
     return false;
   }
 
-  value.assign(reinterpret_cast<const char*>(buffer+locally_parsed_length), string_length);
+  if (string_length == 0)
+  {
+    value = "";
+  }
+  else
+  {
+    value.assign(reinterpret_cast<const char*>(buffer+locally_parsed_length), string_length);
+  }
+
   parsed_length = locally_parsed_length + string_length;
   return true;
 }

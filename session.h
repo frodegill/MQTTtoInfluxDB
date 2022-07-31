@@ -1,6 +1,8 @@
 #ifndef _SESSION_H_
 #define _SESSION_H_
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -17,11 +19,14 @@ private:
 
 public:
   void expireOldSessions();
+  void expireSession(const std::string& client_id);
+  [[nodiscard]] bool createSession(std::string& client_id, std::shared_ptr<Session>& session);
 
-  void generateClientId(std::string& client_id) const;
+  void generateClientId(std::string& client_id);
 
 private:
-  std::unordered_map<std::string,Session> m_session_map;
+  std::mutex m_session_map_lock;
+  std::unordered_map<std::string,std::shared_ptr<Session>> m_session_map;
 
 };
 
