@@ -5,6 +5,11 @@
 #include <random>
 
 
+void Session::disconnect()
+{
+}
+
+
 void SessionManager::expireOldSessions()
 {
 }
@@ -13,7 +18,13 @@ void SessionManager::expireSession(const std::string& client_id)
 {
   {
     std::lock_guard<std::mutex> lock(m_session_map_lock);
-    m_session_map.erase(client_id);
+    auto iter = m_session_map.find(client_id);
+    if (iter != m_session_map.end())
+    {
+      std::shared_ptr<Session> session = iter->second;
+      session->disconnect();
+      m_session_map.erase(client_id);
+    }
   }
 }
 

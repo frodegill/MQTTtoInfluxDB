@@ -9,6 +9,8 @@
 
 class Session
 {
+public:
+  void disconnect();
 };
 
 
