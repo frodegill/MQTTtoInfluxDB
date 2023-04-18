@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include <string>
 
+#include "../buffer.h"
+
+#define RETURN_IF_ERROR(x) if((error_code=x)){return setHasError(error_code);}
+#define RETURN_ERROR(x)    return setHasError(std::make_error_code(std::errc::x));
 
 enum PropertyIdentifier
 {
@@ -41,177 +45,170 @@ enum PropertyIdentifier
 class BasePacket
 {
 protected:
-  BasePacket();
+  BasePacket(std::unique_ptr<Buffer> buffer);
   virtual ~BasePacket() = default;
 
 public:
-  [[nodiscard]] static std::shared_ptr<BasePacket> createPacket(const uint8_t* buffer, size_t length, size_t& fixed_header_length, size_t& total_length);
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) {return setHasError();} //Consider it an error if parsing gets here and not to any of the subclasses
-
-protected:
-  [[nodiscard]] bool parseString(const uint8_t* buffer, size_t length, size_t& parsed_length, std::string& value);
-  [[nodiscard]] bool parseUint8(const uint8_t* buffer, size_t length, size_t& parsed_length, uint8_t& value);
-  [[nodiscard]] bool parseUint16(const uint8_t* buffer, size_t length, size_t& parsed_length, uint16_t& value);
-  [[nodiscard]] bool parseUint32(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value);
-  [[nodiscard]] bool parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value);
-  [[nodiscard]] bool parseBinaryData(const uint8_t* buffer, size_t length, size_t& parsed_length, std::shared_ptr<uint8_t[]>& value);
+  [[nodiscard]] static std::error_code createPacket(asio::ip::tcp::socket& socket, std::shared_ptr<BasePacket>& packet, size_t& fixed_header_length, size_t& total_length);
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::operation_not_permitted));}
 
 public:
-  bool setHasError() {m_has_error = true; return false;}
-  [[nodiscard]] bool hasError() const {return m_has_error;}
+  std::error_code setHasError(std::error_code error_code) {m_error_code=error_code; return m_error_code;}
+  [[nodiscard]] std::error_code getError() const {return m_error_code;}
 
-private:
-  bool m_has_error;
+protected:
+  std::unique_ptr<Buffer> m_buffer;
+  std::error_code m_error_code;
 };
 
 
 class ReservedPacket : public BasePacket
 {
 public:
-  ReservedPacket() : BasePacket() {setHasError();}
+  ReservedPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {setHasError(std::make_error_code(std::errc::operation_not_permitted));}
   virtual ~ReservedPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class ConnAckPacket : public BasePacket
 {
 public:
-  ConnAckPacket() : BasePacket() {}
+  ConnAckPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~ConnAckPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PublishPacket : public BasePacket
 {
 public:
-  PublishPacket() : BasePacket() {}
+  PublishPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PublishPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PubAckPacket : public BasePacket
 {
 public:
-  PubAckPacket() : BasePacket() {}
+  PubAckPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PubAckPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PubRecPacket : public BasePacket
 {
 public:
-  PubRecPacket() : BasePacket() {}
+  PubRecPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PubRecPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PubRelPacket : public BasePacket
 {
 public:
-  PubRelPacket() : BasePacket() {}
+  PubRelPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PubRelPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PubCompPacket : public BasePacket
 {
 public:
-  PubCompPacket() : BasePacket() {}
+  PubCompPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PubCompPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class SubscribePacket : public BasePacket
 {
 public:
-  SubscribePacket() : BasePacket() {}
+  SubscribePacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~SubscribePacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class SubAckPacket : public BasePacket
 {
 public:
-  SubAckPacket() : BasePacket() {}
+  SubAckPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~SubAckPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class UnsubscribePacket : public BasePacket
 {
 public:
-  UnsubscribePacket() : BasePacket() {}
+  UnsubscribePacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~UnsubscribePacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class UnsubAckPacket : public BasePacket
 {
 public:
-  UnsubAckPacket() : BasePacket() {}
+  UnsubAckPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~UnsubAckPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PingReqPacket : public BasePacket
 {
 public:
-  PingReqPacket() : BasePacket() {}
+  PingReqPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PingReqPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class PingRespPacket : public BasePacket
 {
 public:
-  PingRespPacket() : BasePacket() {}
+  PingRespPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~PingRespPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class DisconnectPacket : public BasePacket
 {
 public:
-  DisconnectPacket() : BasePacket() {}
+  DisconnectPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~DisconnectPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 
 class AuthPacket : public BasePacket
 {
 public:
-  AuthPacket() : BasePacket() {}
+  AuthPacket(std::unique_ptr<Buffer> buffer) : BasePacket(std::move(buffer)) {}
   virtual ~AuthPacket() = default;
 
-  [[nodiscard]] virtual bool parse([[maybe_unused]] const uint8_t* buffer, [[maybe_unused]] size_t length) override {return false;}
+  [[nodiscard]] virtual std::error_code parse() {return setHasError(std::make_error_code(std::errc::function_not_supported));}
 };
 
 #endif // _PACKET_H_

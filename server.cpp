@@ -15,46 +15,20 @@ Server::Server(const Properties& properties)
 
 void Server::session(asio::ip::tcp::socket socket)
 {
-  const size_t MAX_LENGTH = 20;
-  std::shared_ptr<uint8_t[]> databuffer(new uint8_t[MAX_LENGTH]);
-  size_t length;
   size_t fixed_header_length;
   size_t total_length;
-  std::error_code error;
+  std::error_code error_code;
   while (true)
   {
     try
     {
-      length = socket.read_some(asio::buffer(databuffer.get(), MAX_LENGTH), error);
-      if (error)
+      std::shared_ptr<BasePacket> packet;
+      if ((error_code=BasePacket::createPacket(socket, packet, fixed_header_length, total_length)))
         break;
 
-      std::shared_ptr<BasePacket> packet = BasePacket::createPacket(databuffer.get(), length, fixed_header_length, total_length);
-      if (packet->hasError())
-        break;
-
-      if (length >= total_length)
+      if ((error_code=packet->parse()))
       {
-        if (!packet->parse(databuffer.get(), length))
-        {
-          break; //Error
-        }
-      }
-      else
-      {
-        std::shared_ptr<uint8_t[]> large_databuffer(new uint8_t[total_length]);
-        if (!large_databuffer.get())
-          break; //OOM
-
-        std::memcpy(large_databuffer.get(), databuffer.get(), length);
-        length += asio::read(socket, asio::buffer(large_databuffer.get()+length, total_length-length), error);
-        if (error || (length < total_length))
-          break;
-
-        if (!packet->parse(large_databuffer.get(), length))
-        {
-          break; //Error
-        }
+        break; //Error
       }
 
       //TODO Handle packet

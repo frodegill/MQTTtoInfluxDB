@@ -8,44 +8,37 @@
  * Any documentation references below, references the document https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html
  */
 
-bool ConnectPacket::parse([[maybe_unused]] const uint8_t* buffer, size_t length)
+std::error_code ConnectPacket::parse()
 {
-  if (length == 0)
-    return setHasError();
+  std::error_code error_code;
 
-  size_t parse_pos = 0;
   //3.1.1, CONNECT Fixed Header
-  if (buffer[parse_pos] != 0x10)
-    return setHasError();
-
-  if (++parse_pos >= length) //Skip first byte of Fixed Header
-    return setHasError();
-
-  uint32_t remaining_length;
-  if (!parseVariableByteInteger(buffer, length, parse_pos, remaining_length))
-    return setHasError();
+  //already taken care of in BasePacket::createPacket
 
   // 3.1.2.1, Protocol Name
   std::string protocol_name;
-  if (!parseString(buffer, length, parse_pos, protocol_name) || protocol_name.compare("MQTT")!=0)
-    return setHasError();
+  RETURN_IF_ERROR(m_buffer->parseString(protocol_name));
+
+  if (protocol_name.compare("MQTT")!=0)
+    RETURN_ERROR(protocol_not_supported);
 
   // 3.1.2.2, Protocol Version
-  if (!parseUint8(buffer, length, parse_pos, m_client_version))
-    return setHasError();
+  RETURN_IF_ERROR(m_buffer->parseUint8(m_protocol_version));
 
-  if (m_client_version<4 || m_client_version>5)
+  if (m_protocol_version<4 || m_protocol_version>5)
   {
-    //TODO "If the Protocol Version is not 5 and the Server does not want to accept the CONNECT packet, the Server MAY send a CONNACK packet with Reason Code 0x84 (Unsupported Protocol Version) and then MUST close the Network Connection"
+    //"If the Protocol Version is not 5 and the Server does not want to accept the CONNECT packet, the Server MAY send a CONNACK packet with Reason Code 0x84 (Unsupported Protocol Version) and then MUST close the Network Connection"
+    //TODO, send CONNACK with Reason code 0x84
+    //TODO, CLose connection
+    RETURN_ERROR(protocol_not_supported);
   }
 
   // 3.1.2.3, Connect Flags
   uint8_t connect_flag;
-  if (!parseUint8(buffer, length, parse_pos, connect_flag))
-    return setHasError();
+  RETURN_IF_ERROR(m_buffer->parseUint8(connect_flag));
 
   if ((connect_flag & 0x01) != 0) //RESERVED flag
-    return setHasError();
+    RETURN_ERROR(illegal_byte_sequence);
 
   m_clean_start_flag = (connect_flag & 0b00000010) >> 1;
   m_will_flag        = (connect_flag & 0b00000100) >> 2;
@@ -55,138 +48,135 @@ bool ConnectPacket::parse([[maybe_unused]] const uint8_t* buffer, size_t length)
   m_username_flag    = (connect_flag & 0b10000000) >> 7;
 
   // 3.1.2.10, Keep Alive
-  if (!parseUint16(buffer, length, parse_pos, m_keep_alive))
-    return setHasError();
+  RETURN_IF_ERROR(m_buffer->parseUint16(m_keep_alive));
 
-  if (m_client_version >= 5)
+  if (m_protocol_version >= 5)
   {
     // 3.1.2.11, Property Length
     uint32_t property_length;
-    if (!parseVariableByteInteger(buffer, length, parse_pos, property_length))
-      return setHasError();
+    RETURN_IF_ERROR(m_buffer->parseVariableByteInteger(property_length));
 
-    uint32_t property_end = parse_pos + property_length;
-    if (property_end >= length)
-      return setHasError();
+    uint32_t property_end = m_buffer->getParsePos() + property_length;
 
     m_user_properties.clear();
-    while (parse_pos < property_end)
+    while (m_buffer->getParsePos() < property_end)
     {
-      switch(buffer[parse_pos++])
+      uint8_t property_identifier;
+      RETURN_IF_ERROR(m_buffer->parseUint8(property_identifier));
+
+      switch(property_identifier)
       {
         case PropertyIdentifier::SESSION_EXPIRY_INTERVAL:
-          if (!parseUint32(buffer, length, parse_pos, m_session_expiry_interval)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint32(m_session_expiry_interval));
           break;
         case PropertyIdentifier::RECEIVE_MAXIMUM:
-          if (!parseUint16(buffer, length, parse_pos, m_receive_maximum)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint16(m_receive_maximum));
           break;
         case PropertyIdentifier::MAXIMUM_PACKET_SIZE:
-          if (!parseUint32(buffer, length, parse_pos, m_maximum_packet_size) || m_maximum_packet_size==0) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint32(m_maximum_packet_size));
+          if (m_maximum_packet_size==0) RETURN_ERROR(illegal_byte_sequence);
           break;
         case PropertyIdentifier::TOPIC_ALIAS_MAXIMUM:
-          if (!parseUint16(buffer, length, parse_pos, m_topic_alias_maximum)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint16(m_topic_alias_maximum));
           break;
         case PropertyIdentifier::REQUEST_RESPONSE_INFORMATION:
-          if (!parseUint8(buffer, length, parse_pos, m_request_response_information) || m_request_response_information>1) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint8(m_request_response_information));
+          if (m_request_response_information>1) RETURN_ERROR(illegal_byte_sequence);
           break;
         case PropertyIdentifier::REQUEST_PROBLEM_INFORMATION:
-          if (!parseUint8(buffer, length, parse_pos, m_request_problem_information) || m_request_problem_information>1) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint8(m_request_problem_information));
+          if (m_request_problem_information>1) RETURN_ERROR(illegal_byte_sequence);
           break;
         case PropertyIdentifier::USER_PROPERTY:
         {
           std::string key, value;
-          if (!parseString(buffer, length, parse_pos, key) ||
-              !parseString(buffer, length, parse_pos, value)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseString(key));
+          RETURN_IF_ERROR(m_buffer->parseString(value));
           m_user_properties.emplace(key, value);
           break;
         }
         case PropertyIdentifier::AUTHENTICATION_METHOD:
-          if (!parseString(buffer, length, parse_pos, m_authentication_method)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseString(m_authentication_method));
           break;
         case PropertyIdentifier::AUTHENTICATION_DATA:
-          if (!parseBinaryData(buffer, length, parse_pos, m_authentication_data)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseBinaryData(m_authentication_data));
           break;
 
-        default: return setHasError();
+        default: RETURN_ERROR(illegal_byte_sequence);
       }
     }
   }
 
-  if (!parseString(buffer, length, parse_pos, m_client_id))
-    return setHasError();
+  RETURN_IF_ERROR(m_buffer->parseString(m_client_id));
 
   if (m_will_flag==1)
   {
     // 3.1.3.2.1 Property Length
     uint32_t will_property_length;
-    if (!parseVariableByteInteger(buffer, length, parse_pos, will_property_length))
-      return setHasError();
+    RETURN_IF_ERROR(m_buffer->parseVariableByteInteger(will_property_length));
 
-    uint32_t will_property_end = parse_pos + will_property_length;
-    if (will_property_end >= length)
-      return setHasError();
+    uint32_t will_property_end = m_buffer->getParsePos() + will_property_length;
 
     m_will_user_properties.clear();
-    while (parse_pos < will_property_end)
+    while (m_buffer->getParsePos() < will_property_end)
     {
-      switch(buffer[parse_pos++])
+      uint8_t property_identifier;
+      RETURN_IF_ERROR(m_buffer->parseUint8(property_identifier));
+
+      switch(property_identifier)
       {
         case PropertyIdentifier::WILL_DELAY_INTERVAL:
-          if (!parseUint32(buffer, length, parse_pos, m_will_delay_interval)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint32(m_will_delay_interval));
           break;
         case PropertyIdentifier::PAYLOAD_FORMAT_INDICATOR:
-          if (!parseUint8(buffer, length, parse_pos, m_payload_format_indicator) || m_payload_format_indicator>1) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint8(m_payload_format_indicator));
+          if (m_payload_format_indicator>1) RETURN_ERROR(illegal_byte_sequence);
           break;
         case PropertyIdentifier::MESSAGE_EXPIRY_INTERVAL:
-          if (!parseUint32(buffer, length, parse_pos, m_message_expiry_interval)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseUint32(m_message_expiry_interval));
           break;
         case PropertyIdentifier::CONTENT_TYPE:
-          if (!parseString(buffer, length, parse_pos, m_content_type)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseString(m_content_type));
           break;
         case PropertyIdentifier::RESPONSE_TOPIC:
-          if (!parseString(buffer, length, parse_pos, m_response_topic)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseString(m_response_topic));
           break;
         case PropertyIdentifier::CORRELATION_DATA:
-          if (!parseBinaryData(buffer, length, parse_pos, m_correlation_data)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseBinaryData(m_correlation_data));
           break;
         case PropertyIdentifier::USER_PROPERTY:
         {
           std::string key, value;
-          if (!parseString(buffer, length, parse_pos, key) ||
-              !parseString(buffer, length, parse_pos, value)) {return setHasError();}
+          RETURN_IF_ERROR(m_buffer->parseString(key));
+          RETURN_IF_ERROR(m_buffer->parseString(value));
           m_will_user_properties.emplace_back(std::pair<std::string,std::string>(key, value));
           break;
         }
 
-        default: return setHasError();
+        default: RETURN_ERROR(illegal_byte_sequence);
       }
     }
 
-    if (!parseString(buffer, length, parse_pos, m_will_topic))
-      return setHasError();
-
-    if (!parseBinaryData(buffer, length, parse_pos, m_will_payload))
-      return setHasError();
+    RETURN_IF_ERROR(m_buffer->parseString(m_will_topic));
+    RETURN_IF_ERROR(m_buffer->parseBinaryData(m_will_payload));
   }
 
   if (m_username_flag==1)
   {
-    if (!parseString(buffer, length, parse_pos, m_username))
-      return setHasError();
+    RETURN_IF_ERROR(m_buffer->parseString(m_username));
   }
 
   if (m_password_flag==1)
   {
-    if (!parseBinaryData(buffer, length, parse_pos, m_password))
-      return setHasError();
+    RETURN_IF_ERROR(m_buffer->parseBinaryData(m_password));
   }
 
   return actions();
 }
 
-bool ConnectPacket::actions() // 3.1.4 CONNECT Actions
+std::error_code ConnectPacket::actions() // 3.1.4 CONNECT Actions
 {
   //TODO
 
-  return true;
+  return std::error_code();
 }

@@ -1,6 +1,7 @@
 #include "packet.h"
 
 #include <cstring>
+#include <iostream>
 
 #include "packet_connect.h"
 
@@ -12,190 +13,97 @@
  * Any documentation references below, references the document https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html
  */
 
-BasePacket::BasePacket()
-: m_has_error(false)
+BasePacket::BasePacket(std::unique_ptr<Buffer> buffer)
+: m_buffer(std::move(buffer))
 {
 }
 
-std::shared_ptr<BasePacket> BasePacket::createPacket(const uint8_t* buffer, size_t length, size_t& fixed_header_length, size_t& total_length)
+std::error_code BasePacket::createPacket(asio::ip::tcp::socket& socket, std::shared_ptr<BasePacket>& packet, size_t& fixed_header_length, size_t& total_length)
 {
+  packet.reset();
+  fixed_header_length = total_length = 0;
   ::getSessionManager()->expireOldSessions();
 
-  if (length == 0)
-    return std::make_shared<ReservedPacket>();
+  std::unique_ptr<Buffer> buffer = std::make_unique<Buffer>(socket);
+  if (!buffer)
+    return std::make_error_code(std::errc::not_enough_memory);
 
-  size_t parse_pos = 0;
+  std::error_code error_code;
+  if ((error_code=buffer->read()))
+    return error_code;
+
+  if (buffer->getReadLength() == 0)
+  {
+    packet = std::make_shared<ReservedPacket>(std::move(buffer));
+    return packet->setHasError(std::make_error_code(std::errc::message_size));
+  }
 
   // 2.1.2, MQTT Control Packet type
-  std::shared_ptr<BasePacket> packet;
-  uint8_t remaining_bits = buffer[parse_pos] & 0x0F;
-  switch((buffer[parse_pos++] & 0xF0) >> 4)
+  uint8_t fixed_header_control_packet_type;
+  uint32_t fixed_header_remaining_length;
+  if ((error_code=buffer->parseUint8(fixed_header_control_packet_type)) ||
+      (error_code=buffer->parseVariableByteInteger(fixed_header_remaining_length)))
+  {
+    return packet->setHasError(error_code);
+  }
+
+  fixed_header_length = buffer->getParsePos();
+  total_length = fixed_header_length + fixed_header_remaining_length;
+
+  if ((error_code=buffer->append(total_length - buffer->getReadLength())))
+    return error_code;
+
+  uint8_t control_packet_type_flags = fixed_header_control_packet_type & 0x0F;
+  switch((fixed_header_control_packet_type & 0xF0) >> 4)
   {
     default: [[fallthrough]];
-    case  0: packet=std::make_shared<ReservedPacket>(); break;
-    case  1: packet=std::make_shared<ConnectPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case  2: packet=std::make_shared<ConnAckPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case  3: packet=std::make_shared<PublishPacket>(); break;
-    case  4: packet=std::make_shared<PubAckPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case  5: packet=std::make_shared<PubRecPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case  6: packet=std::make_shared<PubRelPacket>(); if (remaining_bits != 0x02) packet->setHasError(); break;
-    case  7: packet=std::make_shared<PubCompPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case  8: packet=std::make_shared<SubscribePacket>(); if (remaining_bits != 0x02) packet->setHasError(); break;
-    case  9: packet=std::make_shared<SubAckPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case 10: packet=std::make_shared<UnsubscribePacket>(); if (remaining_bits != 0x02) packet->setHasError(); break;
-    case 11: packet=std::make_shared<UnsubAckPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case 12: packet=std::make_shared<PingReqPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case 13: packet=std::make_shared<PingRespPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case 14: packet=std::make_shared<DisconnectPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
-    case 15: packet=std::make_shared<AuthPacket>(); if (remaining_bits != 0) packet->setHasError(); break;
+    case  0: packet=std::make_shared<ReservedPacket>(std::move(buffer));
+             break;
+    case  1: packet=std::make_shared<ConnectPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x10
+    case  2: packet=std::make_shared<ConnAckPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x20
+    case  3: packet=std::make_shared<PublishPacket>(std::move(buffer));
+             break; //0x3X
+    case  4: packet=std::make_shared<PubAckPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x40
+    case  5: packet=std::make_shared<PubRecPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x50
+    case  6: packet=std::make_shared<PubRelPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0x02) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x62
+    case  7: packet=std::make_shared<PubCompPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x70
+    case  8: packet=std::make_shared<SubscribePacket>(std::move(buffer));
+             if (control_packet_type_flags != 0x02) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x82
+    case  9: packet=std::make_shared<SubAckPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0x90
+    case 10: packet=std::make_shared<UnsubscribePacket>(std::move(buffer));
+             if (control_packet_type_flags != 0x02) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0xA2
+    case 11: packet=std::make_shared<UnsubAckPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0xB0
+    case 12: packet=std::make_shared<PingReqPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0xC0
+    case 13: packet=std::make_shared<PingRespPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0xD0
+    case 14: packet=std::make_shared<DisconnectPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0xE0
+    case 15: packet=std::make_shared<AuthPacket>(std::move(buffer));
+             if (control_packet_type_flags != 0) return packet->setHasError(std::make_error_code(std::errc::illegal_byte_sequence));
+             break; //0xF0
   };
 
-  uint32_t value;
-  if (packet->parseVariableByteInteger(buffer, length, parse_pos, value))
-  {
-    fixed_header_length = parse_pos;
-    total_length = fixed_header_length + value;
-  }
-  else
-  {
-    fixed_header_length = total_length = 0;
-    packet->setHasError();
-  }
-
-  return packet;
-}
-
-/*
- * If returning true, parsed_length will be incremented by the number of bytes consumed
- */
-bool BasePacket::parseString(const uint8_t* buffer, size_t length, size_t& parsed_length, std::string& value)
-{
-  size_t locally_parsed_length = parsed_length;
-  uint16_t string_length;
-  if (!parseUint16(buffer, length, locally_parsed_length, string_length))
-  {
-    value = "";
-    return false;
-  }
-
-  if (locally_parsed_length+string_length > length)
-  {
-    value = "";
-    return false;
-  }
-
-  if (string_length == 0)
-  {
-    value = "";
-  }
-  else
-  {
-    value.assign(reinterpret_cast<const char*>(buffer+locally_parsed_length), string_length);
-  }
-
-  parsed_length = locally_parsed_length + string_length;
-  return true;
-}
-
-/*
- * If returning true, parsed_length will be incremented by the number of bytes consumed
- */
-bool BasePacket::parseUint8(const uint8_t* buffer, size_t length, size_t& parsed_length, uint8_t& value)
-{
-  if (parsed_length+1 >= length)
-  {
-    value = 0;
-    return false;
-  }
-
-  value = buffer[parsed_length];
-  parsed_length++;
-  return true;
-}
-
-/*
- * If returning true, parsed_length will be incremented by the number of bytes consumed
- */
-bool BasePacket::parseUint16(const uint8_t* buffer, size_t length, size_t& parsed_length, uint16_t& value)
-{
-  if (parsed_length+2 >= length)
-  {
-    value = 0;
-    return false;
-  }
-
-  value = buffer[parsed_length]<<8 | buffer[parsed_length+1];
-  parsed_length += 2;
-  return true;
-}
-
-/*
- * If returning true, parsed_length will be incremented by the number of bytes consumed
- */
-bool BasePacket::parseUint32(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value)
-{
-  if (parsed_length+4 >= length)
-  {
-    value = 0;
-    return false;
-  }
-
-  value = buffer[parsed_length]<<24 | buffer[parsed_length+1]<<16 | buffer[parsed_length+2]<<8 | buffer[parsed_length+3];
-  parsed_length += 4;
-  return true;
-}
-
-/*
- * If returning true, parsed_length will be incremented by the number of bytes consumed
- */
-bool BasePacket::parseVariableByteInteger(const uint8_t* buffer, size_t length, size_t& parsed_length, uint32_t& value)
-{
-  value = 0;
-  uint32_t multiplier = 1;
-  uint8_t encoded_byte;
-  // Algorithm from 1.5.5, Variable Byte Integer
-  size_t offset = 0;
-  do
-  {
-    if ((parsed_length+offset) >= length)
-    {
-      value = 0;
-      return false;
-    }
-
-    encoded_byte = buffer[parsed_length + offset++];
-    value += (encoded_byte & 0x7F) * multiplier;
-
-    if (multiplier > 128*128*128)
-    {
-      setHasError();
-      value = 0;
-      return false;
-    }
-
-    multiplier *= 128;
-  }
-  while ((encoded_byte & 0x80) != 0);
-
-  parsed_length += offset;
-  return true;
-}
-
-/*
- * If returning true, parsed_length will be incremented by the number of bytes consumed
- */
-bool BasePacket::parseBinaryData(const uint8_t* buffer, size_t length, size_t& parsed_length, std::shared_ptr<uint8_t[]>& value)
-{
-  size_t locally_parsed_length = parsed_length;
-  uint16_t data_length;
-  if (!parseUint16(buffer, length, locally_parsed_length, data_length))
-    return false;
-
-  if (locally_parsed_length+data_length > length)
-    return false;
-
-  value = std::shared_ptr<uint8_t[]>(new uint8_t[data_length]);
-  std::memcpy(value.get(), buffer+locally_parsed_length, data_length);
-  parsed_length = locally_parsed_length + data_length;
-  return true;
+  return std::error_code();
 }
