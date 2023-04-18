@@ -4,6 +4,9 @@
 #include <asio.hpp>
 #include <memory>
 
+#define IS_OK(x) (!(x))
+#define IS_ERROR(x) ((x))
+
 
 class Buffer
 {

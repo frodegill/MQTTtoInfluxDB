@@ -23,10 +23,10 @@ void Server::session(asio::ip::tcp::socket socket)
     try
     {
       std::shared_ptr<BasePacket> packet;
-      if ((error_code=BasePacket::createPacket(socket, packet, fixed_header_length, total_length)))
+      if (IS_ERROR(error_code=BasePacket::createPacket(socket, packet, fixed_header_length, total_length)))
         break;
 
-      if ((error_code=packet->parse()))
+      if (IS_ERROR(error_code=packet->parse()))
       {
         break; //Error
       }

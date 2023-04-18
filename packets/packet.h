@@ -8,7 +8,7 @@
 
 #include "../buffer.h"
 
-#define RETURN_IF_ERROR(x) if((error_code=x)){return setHasError(error_code);}
+#define RETURN_IF_ERROR(x) if(IS_ERROR(error_code=x)){return setHasError(error_code);}
 #define RETURN_ERROR(x)    return setHasError(std::make_error_code(std::errc::x));
 
 enum PropertyIdentifier

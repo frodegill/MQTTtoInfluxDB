@@ -49,7 +49,7 @@ std::error_code Buffer::append(size_t length)
   std::error_code error_code;
   try
   {
-    if (!(error_code=grow(m_length+length)))
+    if (IS_OK(error_code=grow(m_length+length)))
     {
       m_length += m_socket->read_some(asio::buffer(m_databuffer.get()+m_length, m_capacity-m_length), error_code);
     }
@@ -69,7 +69,7 @@ std::error_code Buffer::parseString(const uint8_t* buffer, size_t length, size_t
   size_t local_parse_pos = parse_pos;
   uint16_t string_length;
   std::error_code error_code;
-  if ((error_code=parseUint16(buffer, length, local_parse_pos, string_length)))
+  if (IS_ERROR(error_code=parseUint16(buffer, length, local_parse_pos, string_length)))
   {
     value = "";
     return error_code;
@@ -91,7 +91,7 @@ std::error_code Buffer::parseString(const uint8_t* buffer, size_t length, size_t
   }
 
   parse_pos = local_parse_pos + string_length;
-  return std::error_code();
+  return error_code;
 }
 
 // If returning OK, parsed_length will be incremented by the number of bytes consumed
@@ -175,7 +175,7 @@ std::error_code Buffer::parseBinaryData(const uint8_t* buffer, size_t length, si
   size_t local_parse_pos = parse_pos;
   uint16_t data_length;
   std::error_code error_code;
-  if ((error_code=parseUint16(buffer, length, local_parse_pos, data_length)))
+  if (IS_ERROR(error_code=parseUint16(buffer, length, local_parse_pos, data_length)))
     return error_code;
 
   if (local_parse_pos+data_length > length)
@@ -186,5 +186,5 @@ std::error_code Buffer::parseBinaryData(const uint8_t* buffer, size_t length, si
   value = std::shared_ptr<uint8_t[]>(new uint8_t[data_length]);
   std::memcpy(value.get(), buffer+local_parse_pos, data_length);
   parse_pos = local_parse_pos + data_length;
-  return std::error_code();
+  return error_code;
 }

@@ -29,7 +29,7 @@ std::error_code BasePacket::createPacket(asio::ip::tcp::socket& socket, std::sha
     return std::make_error_code(std::errc::not_enough_memory);
 
   std::error_code error_code;
-  if ((error_code=buffer->read()))
+  if (IS_ERROR(error_code=buffer->read()))
     return error_code;
 
   if (buffer->getReadLength() == 0)
@@ -41,8 +41,8 @@ std::error_code BasePacket::createPacket(asio::ip::tcp::socket& socket, std::sha
   // 2.1.2, MQTT Control Packet type
   uint8_t fixed_header_control_packet_type;
   uint32_t fixed_header_remaining_length;
-  if ((error_code=buffer->parseUint8(fixed_header_control_packet_type)) ||
-      (error_code=buffer->parseVariableByteInteger(fixed_header_remaining_length)))
+  if (IS_ERROR(error_code=buffer->parseUint8(fixed_header_control_packet_type)) ||
+      IS_ERROR(error_code=buffer->parseVariableByteInteger(fixed_header_remaining_length)))
   {
     return packet->setHasError(error_code);
   }
@@ -50,7 +50,7 @@ std::error_code BasePacket::createPacket(asio::ip::tcp::socket& socket, std::sha
   fixed_header_length = buffer->getParsePos();
   total_length = fixed_header_length + fixed_header_remaining_length;
 
-  if ((error_code=buffer->append(total_length - buffer->getReadLength())))
+  if (IS_ERROR(error_code=buffer->append(total_length - buffer->getReadLength())))
     return error_code;
 
   uint8_t control_packet_type_flags = fixed_header_control_packet_type & 0x0F;
@@ -105,5 +105,5 @@ std::error_code BasePacket::createPacket(asio::ip::tcp::socket& socket, std::sha
              break; //0xF0
   };
 
-  return std::error_code();
+  return error_code;
 }
